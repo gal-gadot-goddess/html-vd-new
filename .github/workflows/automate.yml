@@ -2,7 +2,7 @@ name: HTML Video Automation & Publishing
 
 on:
   schedule:
-    - cron: '0 8,16 * * *' # Twice daily (UTC)
+    - cron: '0 9 * * *' # Everyday once daily at 09:00 UTC (14:30 IST)
   workflow_dispatch:
 
 permissions:

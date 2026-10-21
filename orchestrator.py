@@ -1,11 +1,14 @@
 """
 Automated Pipeline Orchestrator for html-vd-new
-Coordinates: Google Drive Sync -> Video Render -> AI Metadata -> Social Media Upload
+Coordinates: Google Drive Sync -> Weighted LRU Selection -> Video Render -> AI Metadata -> Social Media Upload
+Follows the canonical once-daily weighted-average/LRU publishing law.
 """
 
 import os
 import sys
 import json
+import time
+import random
 import argparse
 from pathlib import Path
 
@@ -19,6 +22,7 @@ if sys.platform == "win32":
 
 BASE_DIR = Path(__file__).resolve().parent
 HTML_DIR = BASE_DIR / "html_sources"
+MUSIC_DIR = BASE_DIR / "music"
 OUTPUT_DIR = BASE_DIR / "output"
 HISTORY_FILE = BASE_DIR / "history.json"
 METADATA_FILE = BASE_DIR / "metadata.json"
@@ -37,11 +41,79 @@ def load_history() -> list:
     return []
 
 def save_history(history: list):
-    HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+
+def select_candidate_weighted_lru(candidates: list, history: list, allow_recirculation: bool = True):
+    """
+    Selects candidate following the canonical Weighted Least-Recently-Used (LRU) / Weighted Average law:
+    1. Strict priority to completely unpublished items (count == 0).
+    2. Once all items are published (Recirculation Mode):
+       Calculates usage frequency for each candidate from history.
+       Computes inverse exponential weights: weight = max(1, 1000 // (3 ** min(count, 6))).
+       Performs a weighted random selection, ensuring least-used items have exponentially higher probability.
+    """
+    if not candidates:
+        return None
+
+    counts = {}
+    for entry in history:
+        name = entry.get("file", "").strip().lower()
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+
+    # 1. Unpublished items
+    unpublished = [c for c in candidates if c.name.strip().lower() not in counts]
+    if unpublished:
+        chosen = random.choice(unpublished)
+        print(f"🎯 [Weighted Selection] Found {len(unpublished)} unpublished file(s). Selected NEW: '{chosen.name}'")
+        return chosen
+
+    # 2. Recirculation Mode using Weighted Average
+    if allow_recirculation:
+        weights = []
+        for c in candidates:
+            cnt = counts.get(c.name.strip().lower(), 0)
+            w = max(1, 1000 // (3 ** min(cnt, 6)))
+            weights.append(w)
+
+        chosen = random.choices(candidates, weights=weights, k=1)[0]
+        used_times = counts.get(chosen.name.strip().lower(), 0)
+        chosen_weight = max(1, 1000 // (3 ** min(used_times, 6)))
+        total_w = sum(weights)
+        pct = (chosen_weight / total_w) * 100
+        print(f"🔁 [Weighted Selection] Recirculation Mode: Selected '{chosen.name}' (used {used_times} times before | weight: {chosen_weight}/{total_w} ~ {pct:.1f}%).")
+        return chosen
+
+    return None
+
+def select_music_weighted_lru(music_files: list, history: list):
+    """
+    Selects background music track using Weighted LRU to ensure even rotation across all available tracks.
+    """
+    if not music_files:
+        return None
+
+    counts = {}
+    for entry in history:
+        track = entry.get("music", "")
+        if track:
+            counts[track.strip().lower()] = counts.get(track.strip().lower(), 0) + 1
+
+    unplayed = [f for f in music_files if f.name.strip().lower() not in counts]
+    if unplayed:
+        chosen = random.choice(unplayed)
+        print(f"🎵 [Music Selection] Selected unplayed track: '{chosen.name}'")
+        return chosen
+
+    weights = [max(1, 1000 // (3 ** min(counts.get(f.name.strip().lower(), 0), 6))) for f in music_files]
+    chosen = random.choices(music_files, weights=weights, k=1)[0]
+    used = counts.get(chosen.name.strip().lower(), 0)
+    print(f"🎵 [Music Selection] Recirculated track: '{chosen.name}' (used {used} times before).")
+    return chosen
 
 def run_pipeline(publish: bool = True, force: bool = False):
     print("\n" + "=" * 60)
-    print("🎬 STARTING AUTOMATION CYCLE")
+    print("🎬 STARTING AUTOMATION CYCLE (DAILY PUBLISH)")
     print("=" * 60)
 
     # 1. Sync from Google Drive if Service Account is configured
@@ -54,28 +126,31 @@ def run_pipeline(publish: bool = True, force: bool = False):
     else:
         print("\nℹ️ [Step 1] GOOGLE_SERVICE_ACCOUNT_KEY not set. Using local html_sources/ assets.")
 
-    # 2. Select HTML file to process
+    # 2. Select HTML file using Weighted Average / LRU
     html_files = sorted(list(HTML_DIR.glob("*.html")))
     if not html_files:
         print("❌ No HTML files found in html_sources/!")
         return
 
     history = load_history()
-    processed_names = {entry.get("file") for entry in history}
 
-    # Find unrendered file, or pick the first if forcing/all done
-    target_file = None
-    for h in html_files:
-        if force or h.name not in processed_names:
-            target_file = h
-            break
+    if force:
+        target_file = random.choice(html_files)
+        print(f"\n🎯 [Step 2] Forced selection: '{target_file.name}'")
+    else:
+        print("\n⚖️ [Step 2] Evaluating candidates via Weighted Average / LRU...")
+        target_file = select_candidate_weighted_lru(html_files, history, allow_recirculation=True)
 
     if not target_file:
-        print("🎉 All HTML files have already been processed! Using latest file for this run.")
-        target_file = html_files[-1]
+        print("❌ Could not select a valid HTML file.")
+        return
 
     topic_title = clean_filename_to_title(target_file.name)
-    print(f"\n🎯 [Step 2] Selected Topic: '{topic_title}' ({target_file.name})")
+    print(f"🎯 [Step 2] Active Topic: '{topic_title}' ({target_file.name})")
+
+    # Select background music track via Weighted LRU
+    music_files = sorted(list(MUSIC_DIR.glob("*.mp3")) + list(MUSIC_DIR.glob("*.wav")))
+    chosen_music = select_music_weighted_lru(music_files, history)
 
     # 3. Generate AI Metadata with Pollinations AI
     print("\n🧠 [Step 3] Generating AI metadata via Pollinations AI...")
@@ -85,7 +160,7 @@ def run_pipeline(publish: bool = True, force: bool = False):
 
     # 4. Render 1080p 60FPS Video with Looping Background Audio
     print("\n📹 [Step 4] Rendering vertical video (1080x1920 @ 60FPS)...")
-    video_path = convert_html_to_video(target_file)
+    video_path = convert_html_to_video(target_file, audio_path=chosen_music)
     print(f"✅ Video render complete: {video_path.name}")
 
     # 5. Upload to Facebook and Instagram
@@ -96,17 +171,20 @@ def run_pipeline(publish: bool = True, force: bool = False):
         print("\nℹ️ [Step 5] Skipping social publish (run with --publish to upload).")
         publish_res = {"status": "skipped"}
 
-    # 6. Update History
+    # 6. Update History with ISO timestamp and full metadata
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     history.append({
         "file": target_file.name,
         "title": metadata.get("title"),
         "video": video_path.name,
+        "music": chosen_music.name if chosen_music else None,
+        "timestamp": now_iso,
         "publish": publish_res
     })
     save_history(history)
 
     print("\n" + "=" * 60)
-    print("✅ CYCLE COMPLETED SUCCESSFULLY!")
+    print(f"✅ CYCLE COMPLETED SUCCESSFULLY AT {now_iso}!")
     print("=" * 60 + "\n")
 
 if __name__ == "__main__":
