@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How an AI Sees: Neural Network</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0;background:#000;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff}
+#stage{position:absolute;left:50%;top:50%;width:540px;height:960px;transform-origin:center;background:#04040c;overflow:hidden}
+canvas{position:absolute;inset:0;width:540px;height:960px}
+/* Reels/Shorts safe zone: text lives inside x 36-460, y 140-770 */
+.tx{position:absolute;left:36px;width:424px;text-align:center;transition:opacity .5s}
+#kk{top:142px;font-size:13px;letter-spacing:5px;font-weight:800;color:#67e8f9}
+#tt{top:166px;margin:0;font-size:40px;font-weight:900;letter-spacing:-.5px;line-height:1.05;text-shadow:0 0 30px rgba(120,140,255,.55)}
+#cp{top:708px;font-size:19px;line-height:1.38;color:#d3d8f0;font-weight:600;text-shadow:0 2px 14px #000}
+.ui{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));right:8px;z-index:9;display:flex;gap:4px;opacity:0;transition:opacity .4s}
+body.show .ui{opacity:1}
+.ui button{background:#1b1d33;color:#cfd4ea;border:1px solid #333a62;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="stage">
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="tw"><div class="tx" id="kk"></div><h1 class="tx" id="tt"></h1><div class="tx" id="cp"></div></div>
+</div>
+<div class="ui"><button onclick="restart()">↻ Replay</button><button onclick="guides=!guides">Safe zones</button></div>
+<script>
+const cv=document.getElementById("c"),ctx=cv.getContext("2d"),stage=document.getElementById("stage");
+function fit(){const s=Math.min(document.body.clientHeight/960,document.body.clientWidth/540);stage.style.transform="translate(-50%,-50%) scale("+s+")"}
+addEventListener("resize",fit);fit();
+let hideT;const showUI=()=>{document.body.classList.add("show");clearTimeout(hideT);hideT=setTimeout(()=>document.body.classList.remove("show"),2500)};
+addEventListener("pointermove",showUI);addEventListener("touchstart",showUI);
+const R=(a,b,c,d)=>{const x=Math.sin(a*127.1+b*311.7+c*74.7+d*19.3+1.7)*43758.5453;return x-Math.floor(x)};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),lerp=(a,b,k)=>a+(b-a)*k,ease=x=>1-Math.pow(1-clamp(x,0,1),3);
+const SP={};
+function spr(h){const k=Math.round(h/10)*10;if(!SP[k]){const c=document.createElement("canvas");c.width=c.height=64;const g=c.getContext("2d"),r=g.createRadialGradient(32,32,0,32,32,32);r.addColorStop(0,`hsla(${k},100%,88%,1)`);r.addColorStop(.25,`hsla(${k},100%,66%,.55)`);r.addColorStop(1,`hsla(${k},100%,50%,0)`);g.fillStyle=r;g.fillRect(0,0,64,64);SP[k]=c}return SP[k]}
+function dot(x,y,r,h,a){if(a<=.01||r<=.3)return;ctx.globalAlpha=Math.min(1,a);ctx.drawImage(spr(h),x-r,y-r,2*r,2*r);ctx.globalAlpha=1}
+
+/* ---- network ---- */
+const N=[64,36,25,10],LY=[2.3,.75,-.8,-2.3],HUE=[190,222,268,318],HX=[2,1.7,1.5,2.05],HZ=[2,1.7,1.5,.5];
+const W=[[],[],[],[]];
+for(let i=0;i<64;i++)W[0].push([(i%8-3.5)*.5,LY[0],(Math.floor(i/8)-3.5)*.5]);
+for(let i=0;i<36;i++)W[1].push([(i%6-2.5)*.56,LY[1],(Math.floor(i/6)-2.5)*.56]);
+for(let i=0;i<25;i++)W[2].push([(i%5-2)*.58,LY[2],(Math.floor(i/5)-2)*.58]);
+for(let i=0;i<10;i++)W[3].push([(i-4.5)*.4,LY[3],0]);
+const E=[[],[],[]];
+[[0,36,5],[1,25,5],[2,10,6]].forEach(([l,nd,m])=>{for(let j=0;j<nd;j++)for(let q=0;q<m;q++)E[l].push([Math.floor(R(l,j,q,1)*N[l]),j,.3+.7*R(l,j,q,2),R(l,j,q,7)])});
+const BM={
+ 7:["11111111","00000011","00000110","00001100","00011000","00110000","00110000","00110000"].join(""),
+ 3:["01111110","00000011","00000011","00111110","00000011","00000011","00000011","01111110"].join(""),
+ 0:["00111100","01100110","11000011","11000011","11000011","11000011","01100110","00111100"].join("")
+};
+const DIG=[7,3,0];let A=[[],[],[],[]],digit=7,pct=98;
+function build(d){
+ digit=d;pct=90+Math.floor(R(d,8,8,8)*9);
+ A[0]=[...BM[d]].map(Number);
+ for(let l=0;l<3;l++){A[l+1]=new Array(N[l+1]).fill(0);const sum=new Array(N[l+1]).fill(0),cnt=new Array(N[l+1]).fill(0);
+  E[l].forEach(([s,t,w])=>{sum[t]+=A[l][s]*w;cnt[t]++});
+  for(let j=0;j<N[l+1];j++)A[l+1][j]=l==2?(j==d?1:.06+.2*R(d,3,j,0)):clamp(sum[j]/cnt[j]*3.2+.14*R(d,l,j,5),.08,1)}
+}
+/* ---- camera ---- */
+let ANG=0,FOC=720;const PI=.4;
+function proj(x,y,z){const c=Math.cos(ANG),s=Math.sin(ANG),X=x*c+z*s,Z=-x*s+z*c,cp=Math.cos(PI),sp=Math.sin(PI),Y2=y*cp+Z*sp,Z2=8-y*sp+Z*cp,k=FOC/Z2;return[246+X*k,470-Y2*k,Z2,k]}
+const DUR=15,TS=[1.8,3.6,5.2,6.8],TB=[12,11.2,10.4,9.6];
+const CAP=[
+ [0,"HOW AN AI SEES",()=>"Reading a digit","Every image is just numbers."],
+ [1.6,"HOW AN AI SEES",()=>"Reading a digit","Each pixel becomes a signal."],
+ [3.4,"HOW AN AI SEES",()=>"Reading a digit","Signals flow through hidden layers…"],
+ [5.6,"HOW AN AI SEES",()=>"Reading a digit","…each neuron adds up what it sees."],
+ [7.3,"THE ANSWER",()=>`It’s a ${digit}`,()=>`${pct}% sure. Not bad for math.`],
+ [9.4,"LEARNING",()=>"Wrong? Fix it.","The error flows backward and tunes every connection."],
+ [12.4,"DEEP LEARNING",()=>"Repeat a million times","That’s how a network learns."]
+];
+const $=id=>document.getElementById(id);let phase=-1;
+function setPhase(i){phase=i;const c=CAP[i],f=v=>typeof v=="function"?v():v;
+ ["kk","tt","cp"].forEach(id=>$(id).style.opacity=0);
+ setTimeout(()=>{$("kk").textContent=c[1];$("tt").textContent=f(c[2]);$("cp").textContent=f(c[3]);["kk","tt","cp"].forEach(id=>$(id).style.opacity=1)},phase?180:0)}
+/* ---- render ---- */
+let T0=performance.now(),loop=-1,guides=false;
+function restart(){T0=performance.now();loop=-1}
+const stars=Array.from({length:80},(_,i)=>({x:R(i,1,1,1)*540,y:R(i,2,2,2)*960,z:.2+R(i,3,3,3)}));
+function bg(T){
+ ctx.globalCompositeOperation="source-over";ctx.fillStyle="#04040c";ctx.fillRect(0,0,540,960);
+ ctx.globalCompositeOperation="lighter";
+ dot(250+Math.sin(T*.2)*120,300,520,250,.2);dot(250+Math.cos(T*.16)*120,680,520,200,.14);
+ stars.forEach(s=>{s.y-=s.z*.1;if(s.y<0)s.y=960;ctx.fillStyle=`rgba(255,255,255,${.12+.3*s.z*(.6+.4*Math.sin(T*2+s.x))})`;ctx.fillRect(s.x,s.y,1.3*s.z+.4,1.3*s.z+.4)});
+}
+function frame(now){
+ const TT=(now-T0)/1000,lp=Math.floor(TT/DUR),t=TT-lp*DUR;
+ if(lp!==loop){loop=lp;build(DIG[lp%3]);phase=-1}
+ let pi=0;CAP.forEach((c,i)=>{if(t>=c[0])pi=i});if(pi!==phase)setPhase(pi);
+ const fade=clamp(Math.min(t/.6,(DUR-t)/.6),0,1);
+ ctx.setTransform(2,0,0,2,0,0);bg(TT);
+ ANG=-.55+t*.07+Math.sin(t*.4)*.12;FOC=720*(1+.025*Math.sin(t*.5));
+ const bpOn=t>9.4&&t<13,P=[[],[],[],[]],ACT=[[],[],[],[]],app=TS.map((_,l)=>ease((t-.2-l*.3)/.8));
+ for(let l=0;l<4;l++)for(let i=0;i<N[l];i++){
+  const w=W[l][i];P[l][i]=proj(w[0],w[1],w[2]);
+  let a;
+  if(l==0)a=.1+.9*A[0][i]*ease((t-1.4-R(i,4,4,4)*.6)/.4);
+  else a=.1+(A[l][i]-.1)*ease((t-TS[l])/.6);
+  a*=.88+.12*Math.sin(t*3+i);
+  if(l==3&&t>7.2&&i==digit)a=1.1+.25*Math.sin(t*6);
+  ACT[l][i]=Math.max(0,a);
+ }
+ const flash=l=>bpOn?Math.exp(-Math.abs(t-TB[l])*1.8):0;
+ /* planes */
+ for(let l=0;l<4;l++){
+  const g=Math.exp(-Math.abs(t-TS[l])*1.6)*(t>TS[l]-.5?1:0),f=flash(l),h=lerp(HUE[l],40,f),y=LY[l];
+  const q=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>proj(a*HX[l],y,b*HZ[l]));
+  ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();
+  ctx.fillStyle=`hsla(${h},90%,60%,${(.035+.1*(g+f))*app[l]*fade})`;ctx.fill();
+  ctx.strokeStyle=`hsla(${h},90%,70%,${(.2+.6*(g+f))*app[l]*fade})`;ctx.lineWidth=1.2;ctx.stroke();
+ }
+ /* edges + particles */
+ for(let l=0;l<3;l++){
+  const bs=TB[l+1],bgate=bpOn?ease((t-bs)/.5)*(1-ease((t-12.9)/.5)):0,g=Math.exp(-Math.abs(t-(TB[l]+TB[l+1])/2)*1.5)*(bpOn?1:0);
+  for(const [s,d,w,hh] of E[l]){
+   const p1=P[l][s],p2=P[l+1][d],vis=Math.min(app[l],app[l+1])*fade,a1=ACT[l][s],a2=ACT[l+1][d];
+   if(vis<.02)continue;
+   const al=(.04+.3*Math.min(a1,1)*Math.min(a2,1)*w+.45*g*w)*vis,hue=lerp(HUE[l],40,Math.min(1,g*1.5));
+   ctx.strokeStyle=`hsla(${hue},90%,66%,${al})`;ctx.lineWidth=.6+a1*w*1.1+g*w;
+   ctx.beginPath();ctx.moveTo(p1[0],p1[1]);ctx.lineTo(p2[0],p2[1]);ctx.stroke();
+   const fwd=(1-bgate)*(t>TS[l]+.1&&a1>.3?1:0);
+   if(fwd>.02){const u=((t-TS[l])*.55+hh)%1,x=lerp(W[l][s][0],W[l+1][d][0],u),y=lerp(W[l][s][1],W[l+1][d][1],u),z=lerp(W[l][s][2],W[l+1][d][2],u),p=proj(x,y,z);
+    dot(p[0],p[1],7*p[3]/90,HUE[l],Math.min(1,a1)*w*fwd*fade)}
+   if(bgate>.02&&w>.4){const u=1-((t-bs)*.7+hh)%1,x=lerp(W[l][s][0],W[l+1][d][0],u),y=lerp(W[l][s][1],W[l+1][d][1],u),z=lerp(W[l][s][2],W[l+1][d][2],u),p=proj(x,y,z);
+    dot(p[0],p[1],9*p[3]/90,40,bgate*w*fade)}
+  }
+ }
+ /* nodes */
+ for(let l=0;l<4;l++)for(let i=0;i<N[l];i++){
+  const p=P[l][i],rs=p[3]/90,a=ACT[l][i],f=flash(l),h=lerp(HUE[l],40,f),ap=app[l]*fade,aa=Math.min(1,a+f*.6);
+  if(l==0){const s=rs*17,lit=A[0][i]>0&&t>1.4;
+   ctx.fillStyle=lit?`hsla(190,100%,${55+30*aa}%,${(.3+.7*aa)*ap})`:`rgba(110,140,255,${.2*ap})`;
+   ctx.fillRect(p[0]-s/2,p[1]-s/2,s,s);
+   if(lit)dot(p[0],p[1],s*1.9,h,.8*aa*ap)}
+  else{dot(p[0],p[1],(11+aa*30)*rs,h,(.3+.7*aa)*ap);
+   ctx.fillStyle=`hsla(${h},100%,${70+25*aa}%,${ap})`;ctx.beginPath();ctx.arc(p[0],p[1],(3+aa*2.5)*rs,0,7);ctx.fill()}
+ }
+ /* result burst */
+ if(t>7.2&&t<9){const p=P[3][digit],e=(t-7.2)/1.8;
+  ctx.strokeStyle=`hsla(318,100%,75%,${(1-e)*fade})`;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(p[0],p[1],e*130*p[3]/90,0,7);ctx.stroke();
+  dot(p[0],p[1],90*p[3]/90*(1-e*.4),318,.6*(1-e)*fade)}
+ /* labels */
+ ctx.globalCompositeOperation="source-over";ctx.textAlign="center";
+ for(let i=0;i<10;i++){const p=P[3][i],win=i==digit&&t>7.2,rs=p[3]/90;
+  ctx.font=`${win?900:700} ${(win?24:15)*rs}px ui-sans-serif,system-ui`;
+  ctx.fillStyle=`rgba(255,255,255,${(win?1:.5)*app[3]*fade})`;ctx.fillText(i,p[0],p[1]+(win?38:26)*rs)}
+ ctx.fillStyle=`rgba(0,0,0,${1-fade})`;ctx.fillRect(0,0,540,960);
+ $("tw").style.opacity=fade;
+ if(guides){ctx.fillStyle="rgba(255,40,90,.16)";ctx.fillRect(0,0,540,135);ctx.fillRect(0,790,540,170);ctx.fillRect(480,135,60,655);ctx.fillRect(0,135,30,655);
+  ctx.strokeStyle="rgba(255,255,255,.5)";ctx.setLineDash([6,6]);ctx.strokeRect(30,135,450,655);ctx.setLineDash([])}
+ requestAnimationFrame(frame);
+}
+addEventListener("keydown",e=>{if(e.key=="r"||e.key=="R")restart();if(e.key=="g"||e.key=="G")guides=!guides});
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
