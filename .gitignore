@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
-output/.temp_recordings/
-output/*.webm
+output/
+music/*.mp3
+music/*.wav
+music/*.m4a
+!music/.gitkeep
 .venv/
 node_modules/
 .DS_Store
