@@ -32,12 +32,28 @@ Optimized for **Instagram Reels**, **YouTube Shorts**, and **TikTok**.
 ```
 html-vd-new/
 ├── converter.py             # Core video generation engine & CLI
-├── download_drive.py        # Google Drive synchronization script
+├── sync_gdrive.py           # Google Drive Service Account synchronization
 ├── requirements.txt         # Python dependencies
-├── html_sources/            # Raw HTML animation files
+├── html_sources/            # Synced HTML animation files from Google Drive
 ├── music/                   # Background audio tracks (.mp3)
-└── output/                  # Rendered high-definition MP4 videos
+└── output/                  # Rendered high-definition 1080p MP4 videos
 ```
+
+---
+
+## ☁️ Google Drive Sync
+
+To sync HTML files and music tracks directly from your Google Drive folders using your configured Google Service Account (`GOOGLE_SERVICE_ACCOUNT_KEY` environment variable):
+
+```bash
+python sync_gdrive.py
+```
+
+This will automatically:
+1. Connect via Google Drive API v3 using the service account credentials.
+2. Download all HTML files from your HTML folder (`19LQ5ofL1ScBKGiidAH7tNxM0xruG1TJ-`).
+3. Download all background tracks from your music folder (`19zTCpkmKpZwUm8j8gnvfHZqVJqfwEz9I`).
+4. Clean up any extra local files that are not present in your Drive folder.
 
 ---
 
