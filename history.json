@@ -1,0 +1,23 @@
+[
+  {
+    "file": "How ChatGPT Works_ The Next Word.html",
+    "title": "ChatGPT's Secret: It's All About The Next Word!",
+    "video": "How ChatGPT Works_ The Next Word.mp4",
+    "publish": {
+      "instagram": {
+        "id": "17902882596671349",
+        "platform": "instagram",
+        "status": "success"
+      },
+      "facebook": {
+        "id": "29264319469901109",
+        "page": "kreggscode",
+        "status": "success"
+      },
+      "threads": {
+        "status": "error",
+        "error": "Failed to create container with all API versions"
+      }
+    }
+  }
+]
