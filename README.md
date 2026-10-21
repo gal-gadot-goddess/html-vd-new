@@ -1,12 +1,12 @@
 # html-vd-new 🎬
 
-High-performance HTML animation to vertical video (9:16) rendering pipeline with automatic animation duration detection and audio looping.
+Automated HTML animation to vertical video (9:16) rendering & multi-platform publishing pipeline.
 
-Optimized for **Instagram Reels**, **YouTube Shorts**, and **TikTok**.
+Optimized for **Instagram Reels**, **Facebook Reels / Pages**, **Threads**, and **TikTok**.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Architecture & Features
 
 1. **Auto Animation Length Detection**:
    - Detects duration dynamically via runtime JavaScript variables (`window.DUR`, `window.T`, `window.EV`, `window.CAP`).
@@ -25,14 +25,33 @@ Optimized for **Instagram Reels**, **YouTube Shorts**, and **TikTok**.
    - Audio Codec: `AAC Stereo 192kbps, 44.1kHz`.
    - Injects custom CSS during recording to hide interactive replay/debug buttons (`.ui, #rp, button`).
 
+4. **Viral AI Metadata Generation (Pollinations AI)**:
+   - Automatically extracts clean topics from HTML filenames.
+   - Generates high-converting, tailored titles, Instagram captions (with bullet points & comment hooks), Facebook tech post descriptions, and trending hashtags.
+
+5. **Multi-Platform Social Media Publishing**:
+   - Direct integration with Instagram Graph API (Reels container upload).
+   - Direct integration with Facebook Graph API (Reels & Page video publishing).
+   - Direct integration with Threads API.
+
+6. **Automated GitHub Actions CI/CD**:
+   - Runs automatically on schedule (twice daily) and via manual dispatch.
+   - Syncs from Google Drive, renders, generates captions, and publishes.
+
 ---
 
 ## 📁 Directory Structure
 
 ```
 html-vd-new/
-├── converter.py             # Core video generation engine & CLI
+├── .github/workflows/
+│   └── automate.yml         # GitHub Actions automated publishing workflow
+├── converter.py             # Core 1080p video generation engine & CLI
 ├── sync_gdrive.py           # Google Drive Service Account synchronization
+├── generate_metadata.py     # AI title, caption & hashtag generator (Pollinations)
+├── publish.py               # Social media publishing runner
+├── orchestrator.py          # End-to-end pipeline runner
+├── upload/                  # Platform-specific API upload modules (FB, IG, Threads)
 ├── requirements.txt         # Python dependencies
 ├── html_sources/            # Synced HTML animation files from Google Drive
 ├── music/                   # Background audio tracks (.mp3)
@@ -41,54 +60,51 @@ html-vd-new/
 
 ---
 
-## ☁️ Google Drive Sync
+## 🔐 Configured GitHub Secrets
 
-To sync HTML files and music tracks directly from your Google Drive folders using your configured Google Service Account (`GOOGLE_SERVICE_ACCOUNT_KEY` environment variable):
-
-```bash
-python sync_gdrive.py
-```
-
-This will automatically:
-1. Connect via Google Drive API v3 using the service account credentials.
-2. Download all HTML files from your HTML folder (`19LQ5ofL1ScBKGiidAH7tNxM0xruG1TJ-`).
-3. Download all background tracks from your music folder (`19zTCpkmKpZwUm8j8gnvfHZqVJqfwEz9I`).
-4. Clean up any extra local files that are not present in your Drive folder.
+All secrets are configured in the repository:
+- `POLLINATIONS_API_KEY`: Pollinations AI access key.
+- `GOOGLE_SERVICE_ACCOUNT_KEY`: Service account JSON key with Drive access.
+- `GDRIVE_HTML_FOLDER_ID`: `19LQ5ofL1ScBKGiidAH7tNxM0xruG1TJ-`
+- `GDRIVE_MUSIC_FOLDER_ID`: `19zTCpkmKpZwUm8j8gnvfHZqVJqfwEz9I`
+- `INSTAGRAM_ACCESS_TOKEN` / `INSTAGRAM_ACCOUNT_ID`
+- `FACEBOOK_PAGE_ACCESS_TOKEN` / `FACEBOOK_PAGE_ID`
+- `THREADS_ACCESS_TOKEN` / `THREADS_USER_ID`
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Usage
 
-### 1. Requirements
+### 1. Run the Complete Automated Pipeline
 
-- Python 3.10+
-- FFmpeg installed and in your system PATH
-- Playwright Chromium:
+```bash
+# Sync Drive -> Render Next Animation -> Generate AI Captions -> Publish
+python orchestrator.py --publish
+```
+
+Without social publishing (local render and metadata only):
+```bash
+python orchestrator.py
+```
+
+### 2. Manual Individual Steps
+
+- **Sync Google Drive Assets:**
   ```bash
-  pip install -r requirements.txt
-  playwright install chromium
+  python sync_gdrive.py
   ```
 
-### 2. Convert a Single HTML File
+- **Convert a Single HTML File to 1080p MP4:**
+  ```bash
+  python converter.py --html "html_sources/What Happens When You Hit Enter.html"
+  ```
 
-```bash
-python converter.py --html "html_sources/How ChatGPT Works_ The Next Word.html"
-```
+- **Generate AI Social Metadata:**
+  ```bash
+  python generate_metadata.py "What Happens When You Hit Enter.html"
+  ```
 
-With specific audio:
-```bash
-python converter.py --html "html_sources/AI Visuals_ Pick One.html" --audio "music/track_1.mp3"
-```
-
-With duration override (in seconds):
-```bash
-python converter.py --html "html_sources/AI Visuals_ Pick One.html" --duration 12.0
-```
-
-### 3. Batch Convert All HTML Files
-
-```bash
-python converter.py --all
-```
-
-All rendered MP4 videos will be saved into the `output/` folder.
+- **Publish an Existing Video:**
+  ```bash
+  python publish.py "output/What Happens When You Hit Enter.mp4" "metadata.json"
+  ```
