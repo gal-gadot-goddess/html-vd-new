@@ -23,15 +23,15 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install System Dependencies (FFmpeg & Chromium libs)
+      - name: Install System Dependencies (FFmpeg)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libgbm-dev libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2t64
+          sudo apt-get install -y ffmpeg
 
-      - name: Install Python Dependencies
+      - name: Install Python Dependencies & Chromium
         run: |
           pip install -r requirements.txt
-          playwright install chromium
+          playwright install --with-deps chromium
 
       - name: Run Automation Pipeline
         env:
@@ -40,7 +40,7 @@ jobs:
           GDRIVE_HTML_FOLDER_ID: ${{ secrets.GDRIVE_HTML_FOLDER_ID }}
           GDRIVE_MUSIC_FOLDER_ID: ${{ secrets.GDRIVE_MUSIC_FOLDER_ID }}
           
-          # Instagram & Facebook Credentials
+          # Instagram & Facebook Credentials (kreggscode)
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}

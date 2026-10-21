@@ -1,207 +1,250 @@
 """
-Facebook Reels & Story Upload
-Uploads Reels and Stories to Facebook Pages.
-Supports multiple pages configured via env or dedicated target list (kreggscode and kreggscode coding).
+Facebook Reels & Story Upload for kreggscode
+Uploads vertical video Reels and Stories to Facebook Page (kreggscode: 503243842882427).
+Uses official Facebook Video Reels Resumable API.
 """
 
 import os
+import sys
+import time
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ensure UTF-8 output on Windows console
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
-# Known pages associated with kreggscode
-KREGGS_PAGES = [
-    {
-        'id': '503243842882427',
-        'name': 'kreggscode',
-        'token': 'EAAM2KQECaR0BSQzUPZChfwgdNZAVwZCnDpUofmFIHZCzkPFWy5fgMVMl5d1EfTOfmHiafdZA6Q9ZBUuJav5DybyRffyqB9CM0lTimZB38CbZAQwpypHVxw80VOAXQs7I93tTsREj9TrmPGrU9eDC8uElHSBwtKAuYxkRXCFtt8ZC0qrOnLXZBCSD1UmntDXq5wjVV72DZA0zieQaZATnihgBmiXqQvf8'
-    },
-    {
-        'id': '106890212286933',
-        'name': 'kreggscode coding',
-        'token': 'EAAM2KQECaR0BSaIESZAqKEOZAWlV6V855jFTcAP7ypNifLCLz0auVRgTgsEDyW31ywIobovSda9rtWKhDkv55hLYlx7bQoVmalrVS8aVfYsRsBwExEm33aEdhXhpBOKvcquHQ6YyrZBtZApkYi5Gvt8WDEWQ73vH7mfbGEmgidG1hBCFdTmnElsEEcNLjEZBt9SJEUgjaKs2EQDdYXr3PgqUZD'
-    }
-]
+env_path = Path(__file__).resolve().parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
-def get_target_pages():
+# Default to kreggscode Facebook Page ID
+DEFAULT_PAGE_ID = "503243842882427"
+PAGE_NAME = "kreggscode"
+
+def get_page_credentials():
     """
-    Returns list of (page_id, page_token, page_name).
-    Prioritizes explicit environment variables if set, and falls back to / includes known kreggscode pages.
+    Retrieves Facebook Page ID and Page Access Token from environment.
     """
-    env_page_id = os.getenv('FACEBOOK_PAGE_ID') or os.getenv('FB_PAGE_ID')
-    env_token = os.getenv('FACEBOOK_PAGE_ACCESS_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN') or os.getenv('FB_ACCESS_TOKEN')
+    page_id = (
+        os.getenv('FACEBOOK_PAGE_ID') or 
+        os.getenv('FB_PAGE_ID') or 
+        DEFAULT_PAGE_ID
+    )
+    access_token = (
+        os.getenv('FACEBOOK_PAGE_ACCESS_TOKEN') or 
+        os.getenv('FACEBOOK_ACCESS_TOKEN') or 
+        os.getenv('FB_PAGE_ACCESS_TOKEN') or 
+        os.getenv('FB_ACCESS_TOKEN')
+    )
+    return page_id, access_token
 
-    targets = []
-    seen = set()
-
-    if env_page_id and env_token:
-        targets.append({'id': env_page_id, 'token': env_token, 'name': 'Env Page'})
-        seen.add(env_page_id)
-
-    # Always ensure both kreggscode pages are included
-    for page in KREGGS_PAGES:
-        if page['id'] not in seen:
-            targets.append(page)
-            seen.add(page['id'])
-
-    return targets
-
-def upload_single_page(video_path, description, title, thumbnail_path, page):
-    page_id = page['id']
-    access_token = page['token']
-    page_name = page.get('name', page_id)
-
-    print(f"\n[facebook] 🚀 Uploading Reel to '{page_name}' (ID: {page_id})...")
-    url = f"https://graph.facebook.com/v21.0/{page_id}/videos"
-
-    with open(video_path, 'rb') as video:
-        files = {'file': video}
-        thumb_file = None
-        if thumbnail_path and os.path.exists(thumbnail_path):
-            thumb_file = open(thumbnail_path, 'rb')
-            files['thumb'] = thumb_file
-
-        data = {
-            'access_token': access_token,
-            'description': description,
-            'title': title,
-            'is_explicit_share': True,
-            'is_reel': True
-        }
-
-        try:
-            response = requests.post(url, files=files, data=data, timeout=300)
-            if thumb_file:
-                thumb_file.close()
-
-            if response.status_code == 200:
-                result = response.json()
-                video_id = result.get('id')
-                print(f"[facebook] ✅ SUCCESS on '{page_name}'! Video ID: {video_id}")
-                return {'id': video_id, 'page': page_name, 'status': 'success'}
-            else:
-                error_data = response.json() if response.text else {}
-                error_msg = error_data.get('error', {}).get('message', response.text)
-                print(f"[facebook] ❌ Failed on '{page_name}': {error_msg}")
-                return {'status': 'failed', 'page': page_name, 'error': error_msg}
-        except Exception as e:
-            if thumb_file:
-                thumb_file.close()
-            print(f"[facebook] ❌ Exception on '{page_name}': {e}")
-            return {'status': 'failed', 'page': page_name, 'error': str(e)}
-
-def upload_to_facebook(video_path, description, title="Algorithm Visualization", thumbnail_path=None, thumb_path=None):
+def upload_to_facebook(video_path, description, title="Tech Short", thumbnail_path=None, thumb_path=None):
     """
-    Upload video to Facebook Pages as a Reel.
+    Uploads vertical video to Facebook Page as a Reel.
     """
     active_thumb = thumbnail_path or thumb_path
 
     print("\n" + "=" * 60)
-    print("📘 FACEBOOK REEL UPLOAD STARTING")
+    print(f"📘 FACEBOOK REEL UPLOAD ({PAGE_NAME}) STARTING")
     print("=" * 60)
 
-    video_path_obj = Path(video_path)
+    video_path_obj = Path(video_path).resolve()
     if not video_path_obj.exists():
         error_msg = f"❌ Video file not found: {video_path}"
         print(f"[facebook] {error_msg}")
         raise FileNotFoundError(error_msg)
 
-    targets = get_target_pages()
-    print(f"[facebook] Target Facebook Pages: {[t['name'] for t in targets]}")
+    page_id, access_token = get_page_credentials()
 
-    results = []
-    for page in targets:
-        res = upload_single_page(video_path, description, title, active_thumb, page)
-        results.append(res)
+    if not access_token:
+        print("[facebook] ⚠️ Skipping Facebook upload: FACEBOOK_PAGE_ACCESS_TOKEN not set.")
+        return {'status': 'skipped', 'reason': 'Missing access token', 'platform': 'facebook'}
 
-    print("=" * 60)
-    return results
+    def mask(s):
+        return f"{s[:8]}...{s[-4:]}" if s and len(s) > 12 else "SET"
+
+    file_size = video_path_obj.stat().st_size
+    file_size_mb = file_size / (1024 * 1024)
+    print(f"[facebook] Target Page: '{PAGE_NAME}' (ID: {page_id})")
+    print(f"[facebook] Token: {mask(access_token)}")
+    print(f"[facebook] Video: {video_path_obj.name} ({file_size_mb:.2f} MB)")
+
+    # Method 1: Meta Video Reels API (official for Reels)
+    try:
+        print("\n[facebook] 🎬 Step 1: Initializing Reel upload session...")
+        init_url = f"https://graph.facebook.com/v21.0/{page_id}/video_reels"
+        init_res = requests.post(
+            init_url,
+            data={
+                'upload_phase': 'start',
+                'access_token': access_token
+            },
+            timeout=30
+        )
+
+        if init_res.status_code == 200:
+            init_data = init_res.json()
+            video_id = init_data.get('video_id')
+            upload_url = init_data.get('upload_url')
+            print(f"[facebook] ✅ Reel session created! Video ID: {video_id}")
+
+            print(f"[facebook] 📤 Step 2: Uploading video bytes to rupload...")
+            rupload_headers = {
+                'Authorization': f'OAuth {access_token}',
+                'offset': '0',
+                'file_size': str(file_size),
+                'Content-Type': 'application/octet-stream'
+            }
+            with open(video_path_obj, 'rb') as vf:
+                up_res = requests.post(upload_url, headers=rupload_headers, data=vf, timeout=300)
+
+            if up_res.status_code in (200, 204) or up_res.json().get('success'):
+                print(f"[facebook] ✅ Video bytes uploaded successfully!")
+            else:
+                print(f"[facebook] ⚠️ Upload note: {up_res.status_code} {up_res.text}")
+
+            print(f"[facebook] 🚀 Step 3: Publishing Reel...")
+            finish_data = {
+                'upload_phase': 'finish',
+                'access_token': access_token,
+                'video_id': video_id,
+                'video_state': 'PUBLISHED',
+                'description': description,
+                'title': title[:100]
+            }
+            fin_res = requests.post(init_url, data=finish_data, timeout=60)
+            fin_json = fin_res.json()
+
+            if fin_res.status_code == 200 and fin_json.get('success'):
+                print(f"[facebook] ✅ SUCCESS! Reel published to '{PAGE_NAME}'! Video ID: {video_id}")
+                print("=" * 60)
+                return {'id': video_id, 'page': PAGE_NAME, 'status': 'success'}
+            else:
+                print(f"[facebook] ⚠️ Reel finish response: {fin_json}. Falling back to standard video API...")
+        else:
+            print(f"[facebook] ⚠️ video_reels start failed: {init_res.text}. Falling back to standard video API...")
+
+    except Exception as e:
+        print(f"[facebook] ⚠️ video_reels error: {e}. Falling back to standard video API...")
+
+    # Method 2: Standard Page Videos API fallback
+    try:
+        print("\n[facebook] 🔄 Falling back to /{page_id}/videos endpoint...")
+        url = f"https://graph.facebook.com/v21.0/{page_id}/videos"
+        with open(video_path_obj, 'rb') as video_file:
+            files = {'file': video_file}
+            thumb_file = None
+            if active_thumb and Path(active_thumb).exists():
+                thumb_file = open(active_thumb, 'rb')
+                files['thumb'] = thumb_file
+
+            data = {
+                'access_token': access_token,
+                'description': description,
+                'title': title[:100],
+                'is_explicit_share': True,
+                'is_reel': True
+            }
+
+            resp = requests.post(url, files=files, data=data, timeout=300)
+            if thumb_file:
+                thumb_file.close()
+
+            if resp.status_code == 200:
+                result = resp.json()
+                video_id = result.get('id')
+                print(f"[facebook] ✅ SUCCESS on '{PAGE_NAME}'! Video ID: {video_id}")
+                print("=" * 60)
+                return {'id': video_id, 'page': PAGE_NAME, 'status': 'success'}
+            else:
+                err = resp.json() if resp.text else {}
+                err_msg = err.get('error', {}).get('message', resp.text)
+                print(f"[facebook] ❌ Failed on '{PAGE_NAME}': {err_msg}")
+                print("=" * 60)
+                return {'status': 'failed', 'page': PAGE_NAME, 'error': err_msg}
+
+    except Exception as e:
+        print(f"[facebook] ❌ Facebook upload exception: {e}")
+        print("=" * 60)
+        return {'status': 'failed', 'page': PAGE_NAME, 'error': str(e)}
 
 def upload_to_facebook_story(video_path):
     """
-    Upload video to Facebook Page as a Story across target pages.
+    Uploads vertical video to Facebook Page as a Story.
     """
     print("\n" + "=" * 60)
-    print("📘 FACEBOOK STORY UPLOAD STARTING")
+    print(f"📘 FACEBOOK STORY UPLOAD ({PAGE_NAME}) STARTING")
     print("=" * 60)
 
-    video_path_obj = Path(video_path)
+    video_path_obj = Path(video_path).resolve()
     if not video_path_obj.exists():
         raise FileNotFoundError(f"[facebook] Video not found: {video_path}")
 
-    targets = get_target_pages()
+    page_id, access_token = get_page_credentials()
+    if not access_token:
+        print("[facebook] Skipping Story upload - access token not set")
+        return {'status': 'skipped', 'reason': 'Missing credentials'}
+
     file_size = video_path_obj.stat().st_size
 
-    results = []
-    for page in targets:
-        page_id = page['id']
-        access_token = page['token']
-        page_name = page.get('name', page_id)
-        print(f"\n[facebook] Uploading Story to '{page_name}' (ID: {page_id})...")
+    try:
+        init_url = f"https://graph.facebook.com/v21.0/{page_id}/video_stories"
+        init_data = {
+            'access_token': access_token,
+            'upload_phase': 'start',
+            'file_size': file_size
+        }
+        res_init = requests.post(init_url, data=init_data, timeout=30)
+        if res_init.status_code != 200:
+            print(f"[facebook] ❌ Story Init Error: {res_init.text}")
+            return {'status': 'failed', 'error': res_init.text}
 
-        try:
-            init_url = f"https://graph.facebook.com/v21.0/{page_id}/video_stories"
-            init_data = {
-                'access_token': access_token,
-                'upload_phase': 'start',
-                'file_size': file_size
-            }
-            res_init = requests.post(init_url, data=init_data, timeout=30)
-            if res_init.status_code != 200:
-                print(f"[facebook] ❌ Init Error on '{page_name}': {res_init.text}")
-                continue
+        init_json = res_init.json()
+        upload_url = init_json.get('upload_url')
+        video_id = init_json.get('video_id')
 
-            init_json = res_init.json()
-            upload_url = init_json.get('upload_url')
-            video_id = init_json.get('video_id')
-            upload_session_id = init_json.get('upload_session_id')
+        headers = {
+            'Authorization': f'OAuth {access_token}',
+            'offset': '0',
+            'file_size': str(file_size),
+            'Content-Type': 'application/octet-stream'
+        }
+        with open(video_path_obj, 'rb') as f:
+            requests.post(upload_url, data=f, headers=headers, timeout=300)
 
-            if upload_url:
-                headers = {
-                    'Authorization': f'OAuth {access_token}',
-                    'offset': '0',
-                    'file_size': str(file_size),
-                    'Content-Type': 'application/octet-stream'
-                }
-                with open(video_path, 'rb') as f:
-                    requests.post(upload_url, data=f, headers=headers, timeout=600)
+        finish_data = {
+            'access_token': access_token,
+            'upload_phase': 'finish',
+            'video_id': video_id
+        }
+        res_finish = requests.post(init_url, data=finish_data, timeout=60)
 
-                publish_data = {
-                    'access_token': access_token,
-                    'upload_phase': 'finish',
-                    'video_id': video_id
-                }
-                res_finish = requests.post(init_url, data=publish_data, timeout=60)
-            else:
-                transfer_url = f"https://graph.facebook.com/v21.0/{page_id}/video_stories"
-                with open(video_path, 'rb') as f:
-                    files = {'video_file_chunk': f}
-                    transfer_data = {
-                        'access_token': access_token,
-                        'upload_phase': 'transfer',
-                        'start_offset': 0,
-                        'upload_session_id': upload_session_id,
-                        'video_id': video_id
-                    }
-                    requests.post(transfer_url, data=transfer_data, files=files, timeout=600)
+        if res_finish.status_code == 200 or res_finish.json().get('success'):
+            print(f"[facebook] ✅ SUCCESS Story on '{PAGE_NAME}'! Video ID: {video_id}")
+            print("=" * 60)
+            return {'id': video_id, 'page': PAGE_NAME, 'status': 'success'}
+        else:
+            print(f"[facebook] ❌ Finish Story Error: {res_finish.text}")
+            print("=" * 60)
+            return {'status': 'failed', 'error': res_finish.text}
 
-                finish_data = {
-                    'access_token': access_token,
-                    'upload_phase': 'finish',
-                    'upload_session_id': upload_session_id,
-                    'video_id': video_id
-                }
-                res_finish = requests.post(transfer_url, data=finish_data, timeout=60)
+    except Exception as e:
+        print(f"[facebook] ❌ Story failed: {e}")
+        print("=" * 60)
+        return {'status': 'failed', 'error': str(e)}
 
-            if res_finish.status_code == 200 or res_finish.json().get('success'):
-                print(f"[facebook] ✅ SUCCESS Story on '{page_name}'! Video ID: {video_id}")
-                results.append({'id': video_id, 'page': page_name, 'status': 'success'})
-            else:
-                print(f"[facebook] ❌ Finish Story Error on '{page_name}': {res_finish.text}")
-        except Exception as e:
-            print(f"[facebook] ❌ Story failed on '{page_name}': {e}")
-
-    print("=" * 60)
-    return results
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        v_file = Path(sys.argv[1])
+        if v_file.exists():
+            res = upload_to_facebook(str(v_file), "Automated Tech Short #coding #tech")
+            print("Result:", res)
+        else:
+            print("File not found:", v_file)
+    else:
+        print("Usage: python upload_facebook.py <video_path>")

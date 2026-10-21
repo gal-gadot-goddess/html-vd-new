@@ -31,14 +31,12 @@ def upload_to_threads(video_path, text):
     print(f"[threads] Access Token: {mask(access_token)}")
 
     if not access_token:
-        error_msg = "❌ THREADS_ACCESS_TOKEN not set"
-        print(f"[threads] {error_msg}")
-        raise ValueError(error_msg)
+        print("[threads] ⚠️ Skipping Threads upload: THREADS_ACCESS_TOKEN not set.")
+        return {'status': 'skipped', 'reason': 'Missing access token', 'platform': 'threads'}
     
     if not user_id:
-        error_msg = "❌ THREADS_USER_ID not set"
-        print(f"[threads] {error_msg}")
-        raise ValueError(error_msg)
+        print("[threads] ⚠️ Skipping Threads upload: THREADS_USER_ID not set.")
+        return {'status': 'skipped', 'reason': 'Missing user id', 'platform': 'threads'}
     
     print(f"[threads] ✅ Credentials loaded")
     
