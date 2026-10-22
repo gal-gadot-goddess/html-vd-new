@@ -1,15 +1,18 @@
 """
-AI Metadata Generator using Pollinations AI
-Generates viral titles, Instagram captions, Facebook posts, and hashtags
-based on the HTML animation topic and filename.
+AI Metadata Generator for html-vd-new via Pollinations AI
+Extracts deep context from HTML animation files (headings, comparisons, mechanics)
+and generates high-converting viral hook titles, SEO captions, and strictly 5 lowercase hashtags.
 """
 
 import os
 import sys
-import json
 import re
+import json
+import html
 import urllib.request
+import urllib.error
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Ensure UTF-8 output on Windows console
 if sys.platform == "win32":
@@ -19,83 +22,209 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-POLLINATIONS_API_URL = "https://gen.pollinations.ai/v1/chat/completions"
+env_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
-def clean_filename_to_title(filename: str) -> str:
-    """Extract a clean, readable topic title from an HTML filename."""
-    stem = Path(filename).stem
-    # Replace underscores and hyphens with spaces
-    title = re.sub(r'[_\-]+', ' ', stem)
-    # Remove reel/html/visualizer keywords if trailing
-    title = re.sub(r'\b(reel|visualizer|html|v\d+)\b', '', title, flags=re.IGNORECASE)
-    # Collapse whitespace
-    title = ' '.join(title.split())
-    return title.strip()
-
-def generate_ai_metadata(topic: str, api_key: str = None) -> dict:
+def extract_html_context(html_path: Path) -> dict:
     """
-    Calls Pollinations AI API to generate structured social media metadata.
+    Extracts core architectural concepts, headings, comparisons, and explanation snippets
+    from the visual HTML animation file to provide rich context to the AI.
     """
-    if not api_key:
-        api_key = os.environ.get("POLLINATIONS_API_KEY")
-
-    prompt = f"""You are a world-class viral tech creator and social media strategist.
-Create a high-converting, educational social media release package for a 9:16 vertical video animation:
-Topic: "{topic}"
-
-RETURN ONLY A VALID JSON OBJECT with these exact keys:
-- "title": "Ultra-engaging hook title (under 80 chars, e.g. {topic}: What Actually Happens?)"
-- "ig_caption": "Captivating Instagram Reels caption (1000-1500 chars). Hook the audience in the first line, explain the core mechanics simply, break down 3-4 key insights with bullet emojis, and end with a curiosity question to drive comments."
-- "fb_caption": "Conversational, highly engaging post for Facebook tech communities with key insights and a discussion hook."
-- "threads_caption": "Snappy, punchy developer takeaway for Threads (under 400 chars)."
-- "hashtags": ["#Tech", "#Programming", "#Coding", "#ComputerScience", "#SoftwareEngineering", "#WebDev", "#LearnToCode"]
-
-Rules:
-- Output raw valid JSON only. Do NOT include markdown code fences, backticks, or extra explanation.
-"""
-
-    headers = {
-        "Content-Type": "application/json"
-    }
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    payload = {
-        "messages": [{"role": "user", "content": prompt}],
-        "model": "gemini-fast",
-        "jsonMode": True
-    }
+    if not html_path:
+        return {}
+    
+    path_obj = Path(html_path)
+    if not path_obj.exists():
+        return {}
 
     try:
-        req = urllib.request.Request(
-            POLLINATIONS_API_URL,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"].strip()
-            
-            # Extract JSON from potential markdown wrapping
-            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', content) or re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                result = json.loads(json_match.group(1) if json_match.lastindex else json_match.group(0))
-                return result
-            return json.loads(content)
-    except Exception as e:
-        print(f"⚠️  Pollinations API call warning ({e}). Generating fallback metadata...")
-        return {
-            "title": f"{topic}: What Really Happens Behind the Scenes",
-            "ig_caption": f"Ever wondered what actually happens during: {topic}?\n\nHere is the complete visual breakdown of how modern computer systems and AI models process this step-by-step.\n\nKey takeaways:\n⚡ Every step happens in milliseconds\n⚡ Multiple layers of abstraction work together\n⚡ High-efficiency architectures ensure low latency\n\nWhich part surprised you most? Drop your thoughts below! 👇",
-            "fb_caption": f"Deep dive into {topic}!\n\nHere is a step-by-step breakdown of how the architecture works under the hood. Watch the reel to see how each phase connects seamlessly.",
-            "threads_caption": f"{topic} explained visually in 15 seconds. Incredible how much engineering happens under the hood.",
-            "hashtags": ["#Tech", "#Programming", "#ComputerScience", "#SoftwareEngineering", "#Coding"]
+        raw_text = path_obj.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return {}
+
+    title_match = re.search(r'<title>(.*?)</title>', raw_text, re.IGNORECASE | re.DOTALL)
+    page_title = html.unescape(title_match.group(1)).strip() if title_match else ""
+    page_title = re.sub(r'^VIZ\s*\d+\s*[·•\-\s]*', '', page_title, flags=re.IGNORECASE).strip()
+
+    # Strip styles & scripts
+    clean = re.sub(r'<style.*?</style>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
+    clean = re.sub(r'<script.*?</script>', '', clean, flags=re.DOTALL | re.IGNORECASE)
+    # Strip HTML tags
+    clean = re.sub(r'<[^>]+>', ' ', clean)
+    clean = html.unescape(clean)
+
+    lines = [l.strip() for l in clean.splitlines() if l.strip()]
+
+    # UI controls & handles to exclude
+    ignore_set = {"@yourhandle", "@kreggscode", "replay", "replayed", "fit", "mute", "unmute", "speed", "1x", "2x"}
+    meaningful_lines = []
+    for l in lines:
+        if l.lower() in ignore_set:
+            continue
+        if len(l) > 3 and not re.match(r'^[0-9\s:.\-→·]+$', l):
+            meaningful_lines.append(l)
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for m in meaningful_lines:
+        m_lower = m.lower()
+        if m_lower not in seen:
+            seen.add(m_lower)
+            deduped.append(m)
+
+    return {
+        "page_title": page_title,
+        "content_snippets": deduped[:12]
+    }
+
+def clean_filename_to_title(filename: str) -> str:
+    name = Path(filename).stem
+    name = re.sub(r'^[0-9]+[-_ ]*', '', name)
+    name = name.replace("_", " ").replace("-", " ")
+    return " ".join(name.split())
+
+def clean_hashtags(raw_tags: list, topic: str = "") -> list:
+    """
+    Ensures strictly at most 5 relevant hashtags, ALL in lowercase small letters.
+    """
+    clean = []
+    for tag in raw_tags:
+        if not isinstance(tag, str):
+            continue
+        t = tag.strip().lower()
+        if not t.startswith("#"):
+            t = f"#{t}"
+        t = re.sub(r'[^#a-z0-9_]', '', t)
+        if len(t) > 2 and t not in clean:
+            clean.append(t)
+
+    default_fallbacks = [
+        f"#{topic.split()[0].lower()}" if topic and topic.split() else "#systemdesign",
+        "#systemdesign",
+        "#backend",
+        "#softwareengineering",
+        "#coding"
+    ]
+    for d in default_fallbacks:
+        d_clean = d.lower()
+        if len(clean) >= 5:
+            break
+        if d_clean not in clean:
+            clean.append(d_clean)
+
+    return clean[:5]
+
+def generate_ai_metadata(topic: str, html_file_path: Path = None) -> dict:
+    """
+    Generates SEO viral title, Instagram caption, Facebook caption, Threads caption,
+    and exactly 5 lowercase hashtags from the HTML content and topic name.
+    """
+    if isinstance(topic, (str, Path)) and (str(topic).endswith(".html") or Path(topic).exists()):
+        if not html_file_path:
+            html_file_path = Path(topic)
+        topic = clean_filename_to_title(str(topic))
+
+    context = extract_html_context(html_file_path) if html_file_path else {}
+    snippets = context.get("content_snippets", [])
+    display_title = context.get("page_title") or topic
+
+    topic_words = topic.split()
+    lead_word = topic_words[0].lower() if topic_words else "tech"
+    fallback_metadata = {
+        "title": f"{display_title}: What Actually Happens? ⚡",
+        "ig_caption": f"⚡ {display_title} Visualized!\n\n"
+                      f"Understanding the core mechanics is key to scalable system architecture.\n\n"
+                      + ("\n".join([f"• {s}" for s in snippets[:6]]) if snippets else f"• Deep dive into {topic} mechanical trade-offs.")
+                      + f"\n\nWhich architecture pattern do you rely on in production? Drop your take below! 👇\n\n"
+                      f"Follow @kreggscode for daily visual system design & backend reels.",
+        "fb_caption": f"Deep Engineering Breakdown: {display_title}.\n\n"
+                      f"When scaling backend infrastructure, evaluating trade-offs is critical.\n\n"
+                      + ("\n".join([f"- {s}" for s in snippets[:8]]) if snippets else f"Detailed architectural overview of {topic}.")
+                      + f"\n\nWhat has your production experience been with this approach? Let's discuss in the comments!",
+        "threads_caption": f"{display_title} visualized in 20s. What's your go-to architecture choice? #{lead_word} #systemdesign",
+        "hashtags": clean_hashtags([f"#{lead_word}", "#systemdesign", "#backend", "#softwareengineering", "#coding"], topic)
+    }
+
+    api_key = os.environ.get("POLLINATIONS_API_KEY", "")
+    endpoints = [
+        "https://gen.pollinations.ai/v1/chat/completions",
+        "https://text.pollinations.ai/openai"
+    ]
+
+    context_str = f"Topic Name: {topic}\n"
+    if context.get("page_title"):
+        context_str += f"Visual Reel Main Title: {context['page_title']}\n"
+    if snippets:
+        context_str += "Visual Storyline & Key Concepts:\n- " + "\n- ".join(snippets[:10])
+
+    prompt = f"""You are a top viral social media growth engineer and senior backend architect managing @kreggscode.
+You create viral, high-retention, high-SEO short-form reels for software engineers, backend developers, and system architects.
+
+We are publishing an animated technical concept reel based on this visual code/system design animation:
+{context_str}
+
+REQUIREMENTS:
+1. "title": Viral SEO hook title (max 65 chars) with an emoji. Make it provocative, curious, or high-value (e.g. "Why Changing Your IP Isn't Instant ⚡", "Kafka vs RabbitMQ: What Actually Happens? 📨").
+2. "ig_caption": High-retention Instagram caption:
+   - First 2 lines: Killer curiosity hook before the fold.
+   - Body: Clean bullet points explaining what happens under the hood based on the visual concepts provided.
+   - Practical Takeaway: 1-2 sentence real-world engineering recommendation or interview tip.
+   - Call to Action: Ask a thought-provoking debate question to drive comments.
+   - Sign-off: "Follow @kreggscode for daily visual system design & architecture breakdowns."
+3. "fb_caption": In-depth professional Facebook engineering post explaining the trade-offs, architecture, and production lessons in detail.
+4. "threads_caption": Short, punchy summary + debate starter (max 280 chars).
+5. "hashtags": STRICTLY EXACTLY 5 relevant hashtags, ALL in LOWERCASE small letters only (e.g. ["#systemdesign", "#backend", "#networking", "#webdev", "#coding"]).
+
+OUTPUT FORMAT:
+Return strictly a valid JSON object with keys: "title", "ig_caption", "fb_caption", "threads_caption", "hashtags".
+"""
+
+    payload = {
+        "model": "openai",
+        "messages": [
+            {"role": "system", "content": "You are a professional system design content creator. You output strictly valid JSON without markdown wrapping."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"}
+    }
+
+    for ep in endpoints:
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Antigravity-Agent"
         }
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            req = urllib.request.Request(ep, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                raw_text = resp.read().decode("utf-8")
+                res = json.loads(raw_text)
+                content = res.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not content:
+                    content = raw_text
+
+                raw_clean = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.MULTILINE)
+                raw_clean = re.sub(r"\s*```$", "", raw_clean, flags=re.MULTILINE).strip()
+                data = json.loads(raw_clean)
+
+                # Strictly sanitize hashtags to exactly 5 lowercase tags
+                data["hashtags"] = clean_hashtags(data.get("hashtags", []), topic)
+                print(f"✅ Successfully generated viral AI metadata via Pollinations ({ep}).")
+                return data
+        except Exception as e:
+            print(f"⚠️ Notice for Pollinations endpoint {ep}: {e}")
+
+    print("ℹ️ Using curated context-aware fallback metadata.")
+    return fallback_metadata
 
 if __name__ == "__main__":
-    sample_topic = sys.argv[1] if len(sys.argv) > 1 else "What Happens When You Hit Enter.html"
-    title = clean_filename_to_title(sample_topic)
-    print(f"🤖 Generating AI metadata for topic: '{title}'...")
-    meta = generate_ai_metadata(title)
-    print(json.dumps(meta, indent=2, ensure_ascii=False))
+    t = sys.argv[1] if len(sys.argv) > 1 else "How an AI Sees_ Neural Network Reel.html"
+    p = Path(t)
+    if p.exists():
+        res = generate_ai_metadata(p.name, html_file_path=p)
+    else:
+        res = generate_ai_metadata(t)
+    print(json.dumps(res, indent=2, ensure_ascii=False))
