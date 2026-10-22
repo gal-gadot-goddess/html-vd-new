@@ -56,17 +56,36 @@ def publish_video(video_path: Path, metadata: dict) -> dict:
 
     threads_caption = metadata.get("threads_caption", f"{title}\n\n{hashtags_str}")
 
+    # Ensure high-clarity cover thumbnail exists (captured from the final complete state of the animation)
+    thumb_path = video_path.with_suffix(".jpg")
+    if not thumb_path.exists():
+        try:
+            import subprocess
+            dur_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)]
+            dur_val = float(subprocess.check_output(dur_cmd, text=True).strip())
+            t_offset = max(1.0, dur_val - 1.2)
+            subprocess.run([
+                "ffmpeg", "-y", "-ss", f"{t_offset:.2f}", "-i", str(video_path),
+                "-frames:v", "1", "-update", "1", "-q:v", "2", str(thumb_path)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if thumb_path.exists():
+                print(f"🖼️ Generated cover thumbnail on-the-fly: {thumb_path.name}")
+        except Exception as te:
+            print(f"⚠️ Thumbnail extract notice: {te}")
+
     results = {}
 
     print(f"\n{'=' * 60}")
     print(f"🚀 PUBLISHING VIDEO: {video_path.name}")
     print(f"📌 Title: {title}")
+    if thumb_path.exists():
+        print(f"🖼️ Cover Image: {thumb_path.name}")
     print(f"{'=' * 60}")
 
     # 1. Instagram Reels
     try:
         print("\n📸 [Instagram] Publishing Reel...")
-        res_ig = upload_to_instagram(str(video_path), ig_caption)
+        res_ig = upload_to_instagram(str(video_path), ig_caption, thumbnail_path=thumb_path if thumb_path.exists() else None)
         results["instagram"] = res_ig
         print("✅ [Instagram] Published successfully!")
     except Exception as e:
@@ -76,7 +95,7 @@ def publish_video(video_path: Path, metadata: dict) -> dict:
     # 2. Facebook Reels / Page
     try:
         print("\n📘 [Facebook] Publishing Reel...")
-        res_fb = upload_to_facebook(str(video_path), fb_caption, title=title[:100])
+        res_fb = upload_to_facebook(str(video_path), fb_caption, title=title[:100], thumbnail_path=thumb_path if thumb_path.exists() else None)
         results["facebook"] = res_fb
         print("✅ [Facebook] Published successfully!")
     except Exception as e:
